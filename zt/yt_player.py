@@ -152,7 +152,7 @@ def ensure_ytdlp_ready():
             ytdlp_zip = os.path.join(APP_DIR, "bin", "yt-dlp")
             if not os.path.exists(ytdlp_zip):
                 for c in [
-                    os.path.join(SDCARD_PATH + "/.zimtube"", "bin", "yt-dlp"),
+                    os.path.join(SDCARD_PATH, ".zimtube", "bin", "yt-dlp"),
                     os.path.join(SDCARD_PATH, ".retrohub", "bin", "yt-dlp"),
                 ]:
                     if os.path.exists(c):

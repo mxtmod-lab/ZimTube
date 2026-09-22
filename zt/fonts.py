@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 """Font loader for ZimTube."""
 import os
-import sdl2.sdlttf as ttf
+
+try:
+    import sdl2.sdlttf as ttf
+except Exception:
+    ttf = None
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -27,13 +31,19 @@ def find_font():
 
 def load_fonts():
     """Return (font_title, font_body, font_small) or None on failure."""
-    ttf.TTF_Init()
-    path = find_font()
-    if not path:
+    if ttf is None:
         return None
-    f_title = ttf.TTF_OpenFont(path.encode(), 26)
-    f_body  = ttf.TTF_OpenFont(path.encode(), 20)
-    f_small = ttf.TTF_OpenFont(path.encode(), 16)
-    if not f_title or not f_body or not f_small:
+    try:
+        ttf.TTF_Init()
+        path = find_font()
+        if not path:
+            return None
+        f_title = ttf.TTF_OpenFont(path.encode(), 26)
+        f_body  = ttf.TTF_OpenFont(path.encode(), 20)
+        f_small = ttf.TTF_OpenFont(path.encode(), 16)
+        if not f_title or not f_body or not f_small:
+            return None
+        return f_title, f_body, f_small
+    except Exception:
         return None
-    return f_title, f_body, f_small
+
