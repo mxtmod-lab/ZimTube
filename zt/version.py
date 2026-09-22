@@ -2,7 +2,7 @@
 """ZimTube release metadata."""
 import re
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 GITHUB_REPO = "mxtmod-lab/ZimTube"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_ASSET = "ZimTube-update.zip"
