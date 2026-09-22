@@ -2,7 +2,8 @@
 """Watch Screen — video detail + play button + related videos."""
 import os, threading
 from .base import BaseScreen
-from zt import yt
+from zt import playback, settings, yt
+from zt.player import launch_session
 from zt.paths import YT_CACHE_DIR
 from zt.state import SCREEN_W, SCREEN_H
 
@@ -23,6 +24,7 @@ class WatchScreen(BaseScreen):
         self.rel_sel = 0
         self.is_fav = False
         self.loading_meta = False
+        self.starting = False
         self._gen = 0
 
     def on_enter(self, params=None):
@@ -34,6 +36,7 @@ class WatchScreen(BaseScreen):
         self.related = []
         self.focus   = FOCUS_PLAY
         self.rel_sel = 0
+        self.starting = False
         favs = yt.load_favorites()
         self.is_fav = yt.is_favorite(self.video.get("id", ""), favs)
         self._fetch_meta()
@@ -126,7 +129,7 @@ class WatchScreen(BaseScreen):
                 })
                 return True
 
-        # Queue navigation
+        # Queue navigation: physical L1 = previous, R1 = next.
         if inputs.get("btn_l") and self.index > 0:
             self.index -= 1
             self.video = self.queue[self.index]
@@ -140,21 +143,29 @@ class WatchScreen(BaseScreen):
         return dirty
 
     def _play(self):
-        from zt.yt_player import play_video
+        if self.starting:
+            return
         vid_id = self.video.get("id", "")
-        title  = self.video.get("title", "")
         if not vid_id:
             self.engine.toast("Không có video ID!")
             return
-        self.engine.toast("Đang chuẩn bị phát... (có thể mất 10-20s)")
-        threading.Thread(target=self._bg_play, args=(vid_id, title), daemon=True).start()
+        opts = settings.load()
+        sess = playback.PlaybackSession(
+            queue=self.queue or [self.video], index=self.index,
+            mode="queue" if len(self.queue) > 1 else "single",
+            context=self.context, audio_only=opts["audio_only"],
+            quality=opts["quality"], autoplay=opts["autoplay"],
+        )
+        self.starting = True
+        self.engine.toast("Đang chuẩn bị video…", 5)
+        if opts.get("show_player_help"):
+            self.engine.push_screen("player_help", {"session": sess})
+            self.starting = False
+        elif not launch_session(self.engine, sess):
+            self.starting = False
 
-    def _bg_play(self, vid_id, title):
-        try:
-            from zt.yt_player import play_video
-            play_video(vid_id, direct_title=title)
-        except Exception as e:
-            self.engine.toast(f"Lỗi phát: {str(e)[:60]}")
+    def _download(self):
+        self.engine.push_screen("downloads", {"video": self.video})
 
     def _toggle_fav(self):
         favs = yt.load_favorites()
@@ -167,7 +178,8 @@ class WatchScreen(BaseScreen):
     def render(self, engine):
         self.draw_header(engine, subtitle=self.context)
         self._draw_content(engine)
-        hints = [("A", "Phát"), ("B", "Quay lại"), ("L/R", "Prev/Next")]
+        hints = [("A", "Phát"), ("MENU", "Chức năng"),
+                 ("B", "Quay lại"), ("L/R", "Trước/Sau")]
         self.draw_footer(engine, hints)
 
     def _draw_content(self, engine):

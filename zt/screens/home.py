@@ -34,6 +34,7 @@ class HomeScreen(BaseScreen):
         self.has_more = False
         self._load_gen = 0
         self._thumb_threads = {}
+        self.confirm_exit = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -51,12 +52,15 @@ class HomeScreen(BaseScreen):
     # ── Tabs ──────────────────────────────────────────────────────────────
 
     def _build_tabs(self):
+        from zt import playback
         tabs = ["🔥 Trending"]
+        if playback.load_watched():
+            tabs.append("◷ Lịch sử")
         favs = yt.load_favorites()
         if favs:
             tabs.append("♥ Yêu thích")
         history = yt.load_search_history() or []
-        for q in history[:6]:
+        for q in history[:4]:
             if q not in tabs:
                 tabs.append(q)
         if "Nhạc Việt" not in tabs:
@@ -90,6 +94,9 @@ class HomeScreen(BaseScreen):
         try:
             if "Trending" in query or "🔥" in query:
                 videos = yt.get_trending(limit=18)
+            elif "Lịch sử" in query:
+                from zt import playback
+                videos = playback.load_watched()
             elif "Yêu thích" in query or "♥" in query:
                 videos = yt.load_favorites()
             else:
@@ -128,6 +135,13 @@ class HomeScreen(BaseScreen):
     # ── Input ─────────────────────────────────────────────────────────────
 
     def handle_input(self, inputs):
+        if self.confirm_exit:
+            if inputs.get("btn_a"):
+                self.engine.quit()
+            elif inputs.get("btn_b"):
+                self.confirm_exit = False
+            return True
+
         if self.loading:
             return False
 
@@ -137,13 +151,12 @@ class HomeScreen(BaseScreen):
 
         dirty = False
 
-        if inputs.get("btn_left"):
-            # Switch tab left
+        # L1/R1 switch tabs; D-pad left/right navigates the grid.
+        if inputs.get("btn_l"):
             self.tab_idx = (self.tab_idx - 1) % len(self.tabs)
             self._load_tab(); return True
 
-        if inputs.get("btn_right"):
-            # Switch tab right
+        if inputs.get("btn_r"):
             self.tab_idx = (self.tab_idx + 1) % len(self.tabs)
             self._load_tab(); return True
 
@@ -158,23 +171,17 @@ class HomeScreen(BaseScreen):
             elif self.sel < n - 1:
                 self.sel = n - 1
             self._clamp_scroll(); dirty = True
-            # Load more when near bottom
             row = self.sel // COLS
             total_rows = (n + COLS - 1) // COLS
             if row >= total_rows - 2 and self.has_more and not self.loading_more:
                 self._load_more()
 
-        # Navigate within row
-        if inputs.get("btn_l") and n:
-            row = self.sel // COLS
-            col = self.sel % COLS
-            if col > 0:
+        if inputs.get("btn_left") and n:
+            if self.sel % COLS > 0:
                 self.sel -= 1; dirty = True
 
-        if inputs.get("btn_r") and n:
-            row = self.sel // COLS
-            col = self.sel % COLS
-            if col < COLS - 1 and self.sel + 1 < n:
+        if inputs.get("btn_right") and n:
+            if self.sel % COLS < COLS - 1 and self.sel + 1 < n:
                 self.sel += 1; dirty = True
 
         if inputs.get("btn_a") and n and self.sel < n:
@@ -187,17 +194,11 @@ class HomeScreen(BaseScreen):
             return True
 
         if inputs.get("btn_x"):
-            # Open search keyboard
-            self.engine.push_screen("keyboard", {"callback_screen": "home"})
-            return True
-
-        if inputs.get("btn_y"):
-            # Add to search history and reload
             self.engine.push_screen("keyboard", {"callback_screen": "home"})
             return True
 
         if inputs.get("btn_b"):
-            self.engine.quit()
+            self.confirm_exit = True
             return True
 
         return dirty
@@ -250,9 +251,30 @@ class HomeScreen(BaseScreen):
             self._draw_grid(engine)
 
         self.draw_footer(engine, [
-            ("A", "Xem"), ("X", "Tìm kiếm"),
-            ("L/R", "Tab"), ("B", "Thoát"),
+            ("A", "Xem"), ("X", "Tìm"), ("L/R", "Tab"),
+            ("MENU", "Chức năng"), ("B", "Thoát"),
         ])
+        if self.confirm_exit:
+            self._draw_exit_confirm(engine)
+
+    def _draw_exit_confirm(self, engine):
+        """Draw a blocking confirmation dialog over the Home screen."""
+        box_w, box_h = 560, 230
+        x = (SCREEN_W - box_w) // 2
+        y = (SCREEN_H - box_h) // 2
+        engine.fill_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0, 190)
+        engine.fill_rect(x, y, box_w, box_h, 28, 28, 31, 255)
+        engine.draw_rect(x, y, box_w, box_h, 255, 0, 0, 255, 3)
+        engine.draw_text("THOÁT ZIMTUBE?", engine.font_title,
+                         SCREEN_W // 2, y + 38, 255, 255, 255, center_x=True)
+        engine.draw_text("Anh có chắc muốn thoát ứng dụng không?", engine.font_body,
+                         SCREEN_W // 2, y + 94, 190, 190, 190, center_x=True)
+        engine.fill_rect(x + 75, y + 150, 170, 46, 255, 0, 0, 255)
+        engine.draw_text("A  Có", engine.font_body, x + 160, y + 163,
+                         255, 255, 255, center_x=True)
+        engine.fill_rect(x + 315, y + 150, 170, 46, 55, 55, 58, 255)
+        engine.draw_text("B  Không", engine.font_body, x + 400, y + 163,
+                         255, 255, 255, center_x=True)
 
     def _draw_header(self, engine):
         from zt.engine import HEADER_BG

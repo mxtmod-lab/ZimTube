@@ -45,6 +45,18 @@ WATCHED_FILE           = os.path.join(CACHE_DIR, "watched.json")
 YT_SESSION_FILE        = os.path.join(CACHE_DIR, "session.json")
 YT_PROGRESS_FILE       = os.path.join(CACHE_DIR, "progress.json")
 YT_WATCHED_FILE        = os.path.join(CACHE_DIR, "watched.json")
+YT_SETTINGS_FILE       = os.path.join(CACHE_DIR, "settings.json")
+YT_DOWNLOAD_INDEX_FILE = os.path.join(CACHE_DIR, "downloads.json")
+YT_PLAYER_RESULT_FILE  = os.path.join(CACHE_DIR, "player_result.json")
 YTDLP_PATH             = os.path.join(CACHE_DIR, "yt-dlp")
 
-
+# Offline media must survive a reboot; never place user downloads under /tmp.
+YT_DOWNLOAD_DIR = os.path.join(SDCARD_PATH, "Videos", "ZimTube")
+try:
+    os.makedirs(YT_DOWNLOAD_DIR, exist_ok=True)
+except Exception:
+    YT_DOWNLOAD_DIR = os.path.join(CACHE_DIR, "downloads")
+    try:
+        os.makedirs(YT_DOWNLOAD_DIR, exist_ok=True)
+    except Exception:
+        pass

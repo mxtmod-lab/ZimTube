@@ -17,6 +17,13 @@ from zt.screens.home import HomeScreen
 from zt.screens.search import SearchScreen
 from zt.screens.watch import WatchScreen
 from zt.screens.keyboard import KeyboardScreen
+from zt.screens.library import LibraryScreen
+from zt.screens.downloads import DownloadsScreen
+from zt.screens.settings_screen import SettingsScreen
+from zt.screens.player_help import PlayerHelpScreen
+from zt.screens.action_menu import ActionMenuScreen
+from zt.screens.update_screen import UpdateScreen
+from zt import updater
 
 
 def main():
@@ -25,10 +32,31 @@ def main():
     if not engine.init_fonts():
         sys.exit(1)
 
-    engine.register_screen("home",     HomeScreen(engine))
-    engine.register_screen("search",   SearchScreen(engine))
-    engine.register_screen("watch",    WatchScreen(engine))
-    engine.register_screen("keyboard", KeyboardScreen(engine))
+    engine.register_screen("home",        HomeScreen(engine))
+    engine.register_screen("search",      SearchScreen(engine))
+    engine.register_screen("watch",       WatchScreen(engine))
+    engine.register_screen("keyboard",    KeyboardScreen(engine))
+    engine.register_screen("library",     LibraryScreen(engine))
+    engine.register_screen("downloads",   DownloadsScreen(engine))
+    engine.register_screen("settings",    SettingsScreen(engine))
+    engine.register_screen("player_help", PlayerHelpScreen(engine))
+    engine.register_screen("action_menu", ActionMenuScreen(engine))
+    engine.register_screen("update",      UpdateScreen(engine))
+
+    update_message = updater.consume_result()
+    if update_message:
+        engine.toast(update_message, 7)
+
+    error_marker = "/tmp/yt_last_error.txt"
+    if os.path.exists(error_marker):
+        try:
+            with open(error_marker, "r", encoding="utf-8") as f:
+                message = f.read().strip()
+            if message:
+                engine.toast(message, 6)
+            os.remove(error_marker)
+        except OSError:
+            pass
 
     engine.run()
 

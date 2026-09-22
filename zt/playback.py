@@ -91,7 +91,8 @@ class PlaybackSession:
     """The state of one continuous viewing/listening session."""
 
     def __init__(self, queue=None, index=0, mode="single", context="",
-                 repeat="off", shuffle=False, audio_only=False, state="idle"):
+                 repeat="off", shuffle=False, audio_only=False, state="idle",
+                 quality="360p", autoplay=True):
         self.queue = [dict(v) for v in (queue or []) if isinstance(v, dict) and v.get("id")]
         self.index = int(index) if self.queue else 0
         if self.index < 0 or self.index >= len(self.queue):
@@ -102,6 +103,8 @@ class PlaybackSession:
         self.shuffle = bool(shuffle)
         self.audio_only = bool(audio_only)
         self.state = state
+        self.quality = quality if quality in ("auto", "240p", "360p", "480p", "720p") else "360p"
+        self.autoplay = bool(autoplay)
 
     # -- serialization ------------------------------------------------------
     def to_dict(self):
@@ -113,6 +116,8 @@ class PlaybackSession:
             "repeat": self.repeat,
             "shuffle": self.shuffle,
             "audio_only": self.audio_only,
+            "quality": self.quality,
+            "autoplay": self.autoplay,
             "state": self.state,
             "updated_at": time.time(),
         }
@@ -129,6 +134,8 @@ class PlaybackSession:
             repeat=d.get("repeat", "off"),
             shuffle=d.get("shuffle", False),
             audio_only=d.get("audio_only", False),
+            quality=d.get("quality", "360p"),
+            autoplay=d.get("autoplay", True),
             state=d.get("state", "idle"),
         )
         return sess if sess.queue else None
@@ -353,6 +360,40 @@ def add_watched(video, pos=0.0):
             "pos": round(float(pos or 0), 1),
         })
         _save_json(YT_WATCHED_FILE, items[:MAX_WATCHED])
+
+
+def remove_watched(video_id):
+    if not video_id:
+        return
+    with _LOCK:
+        items = _load_json(YT_WATCHED_FILE, [])
+        items = [it for it in items if it.get("id") != video_id]
+        _save_json(YT_WATCHED_FILE, items)
+
+
+def continue_watching(limit=100):
+    """Return videos with useful unfinished progress, newest first."""
+    progress = load_progress()
+    watched = {it.get("id"): it for it in load_watched() if it.get("id")}
+    result = []
+    for vid, entry in progress.items():
+        pos = float(entry.get("pos", 0) or 0)
+        dur = float(entry.get("dur", 0) or 0)
+        if pos < RESUME_MIN_POS or (dur and dur - pos < RESUME_TAIL):
+            continue
+        video = dict(watched.get(vid, {}))
+        video.update({
+            "id": vid,
+            "title": entry.get("title") or video.get("title", vid),
+            "channel": entry.get("channel") or video.get("channel", ""),
+            "progress_pos": pos,
+            "progress_dur": dur,
+            "progress_ratio": min(1.0, pos / dur) if dur else 0.0,
+            "progress_ts": entry.get("ts", 0),
+        })
+        result.append(video)
+    result.sort(key=lambda v: v.get("progress_ts", 0), reverse=True)
+    return result[:limit]
 
 
 def clear_watched():

@@ -2,6 +2,7 @@
 """YouTube standalone player launcher for RetroHub on TrimUI devices."""
 
 import http.server
+import json
 import os
 import shutil
 import socket
@@ -12,6 +13,8 @@ import sys
 import threading
 import time
 import urllib.request
+
+from .paths import YT_PLAYER_RESULT_FILE
 
 SDCARD_PATH = os.environ.get("SDCARD_PATH", "/mnt/SDCARD")
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,6 +42,11 @@ def record_error(err: str):
     try:
         with open(ERR_MARKER, "w", encoding="utf-8") as f:
             f.write(err)
+        os.makedirs(os.path.dirname(YT_PLAYER_RESULT_FILE), exist_ok=True)
+        with open(YT_PLAYER_RESULT_FILE + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"ok": False, "error": err, "ts": time.time()}, f,
+                      ensure_ascii=False)
+        os.replace(YT_PLAYER_RESULT_FILE + ".tmp", YT_PLAYER_RESULT_FILE)
     except Exception:
         pass
 
@@ -194,8 +202,8 @@ def extract_stream_fast(video_id: str) -> tuple:
     return extract_stream_url(video_id)
 
 
-def extract_stream_url(video_id: str) -> tuple:
-    """Trích xuất stream URL định dạng MP4 360p progressive (format 18) bằng yt-dlp tối ưu."""
+def extract_stream_url(video_id: str, quality: str = "360p") -> tuple:
+    """Resolve a progressive MP4 stream, safely falling back to format 18."""
     ensure_ytdlp_ready()
     try:
         import yt_dlp
@@ -206,8 +214,15 @@ def extract_stream_url(video_id: str) -> tuple:
     yt_url = f"https://www.youtube.com/watch?v={video_id}"
     log(f"Dang phan tich video qua yt-dlp: {yt_url}")
 
+    height = {"240p": 240, "360p": 360, "480p": 480, "720p": 720}.get(quality, 360)
+    # Prefer one-file progressive MP4 so the low-power libretro core never has
+    # to merge DASH audio/video.  Format 18 remains the reliable final fallback.
+    format_expr = (
+        f"best[ext=mp4][acodec!=none][vcodec!=none][height<={height}]"
+        "/18/b[ext=mp4][acodec!=none][vcodec!=none]/best"
+    )
     ydl_opts = {
-        "format": "18/b[ext=mp4]/best",
+        "format": format_expr,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -274,7 +289,8 @@ def resolve_retroarch_and_ffmpeg():
 
 
 def play_video(video_id: str, direct_stream_url: str = None, direct_title: str = None,
-               audio_only: bool = False):
+               audio_only: bool = False, quality: str = "360p",
+               local_path: str = None):
     # Reset error marker
     if os.path.exists(ERR_MARKER):
         try:
@@ -285,7 +301,11 @@ def play_video(video_id: str, direct_stream_url: str = None, direct_title: str =
     log(f"==================================================")
     log(f"Bat dau phat YouTube video ID: {video_id}")
 
-    if direct_stream_url:
+    if local_path and os.path.isfile(local_path):
+        stream_url = local_path
+        title = direct_title or os.path.basename(local_path)
+        log(f"Phat file offline: {local_path}")
+    elif direct_stream_url:
         stream_url = direct_stream_url
         title = direct_title or video_id
         log(f"Su dung stream URL da trich xuat san tu app (Bo qua buoc phan tich).")
@@ -294,11 +314,11 @@ def play_video(video_id: str, direct_stream_url: str = None, direct_title: str =
         stream_url, title = resolve_audio_stream(video_id)
         if not stream_url:
             log("Khong lay duoc luong audio-only, fallback sang video.")
-            stream_url, title = extract_stream_fast(video_id)
+            stream_url, title = extract_stream_url(video_id, quality)
         else:
             log("Dung luong audio-only (chi phat tieng).")
     else:
-        stream_url, title = extract_stream_fast(video_id)
+        stream_url, title = extract_stream_url(video_id, quality)
 
     if not stream_url:
         log("Huy phat video vi khong lay duoc link.")
@@ -332,11 +352,11 @@ def play_video(video_id: str, direct_stream_url: str = None, direct_title: str =
 input_enable_hotkey_btn = "nul"
 input_enable_hotkey = "nul"
 
-# Phim A (btn 1): Tam dung / Tiep tuc phat (Pause / Resume)
+# Phim A vat ly (btn 1 tren TrimUI): Tam dung / Tiep tuc phat
 input_pause_toggle_btn = "1"
 input_pause_toggle = "p"
 
-# Phim B (btn 0): Thoat video ngay lap tuc, quay ve RetroHub
+# Phim B vat ly (btn 0 tren TrimUI): Thoat video, quay ve ZimTube
 input_exit_emulator_btn = "0"
 input_exit_emulator = "escape"
 
@@ -346,7 +366,7 @@ input_menu_toggle_gamepad_combo = "4"
 
 # Phim Y (btn 2): Tua nhanh (Fast forward)
 input_toggle_fast_forward_btn = "2"
-input_hold_fast_forward_btn = "2"
+input_hold_fast_forward_btn = "nul"
 
 # Phim Start (btn 6): Tam dung / Tiep tuc
 input_player1_start_btn = "6"
@@ -354,23 +374,25 @@ input_player1_start_btn = "6"
 # Cho phep can Analog Trai hoat dong nhu D-Pad de tua video muot ma
 input_player1_analog_dpad_mode = "1"
 
-# Mapping D-Pad cho ffmpeg core (13=Left: -10s, 14=Right: +10s, 12=Down: -60s, 11=Up: +60s)
+# Mapping D-Pad cho ffmpeg core.
+# TrimUI reports horizontal/shoulder indices in reverse order compared with
+# the generic RetroArch labels, so bind by the physical button direction.
 input_player1_b_btn = "0"
 input_player1_a_btn = "1"
 input_player1_y_btn = "2"
 input_player1_x_btn = "3"
 input_player1_select_btn = "4"
 input_player1_start_btn = "6"
-input_player1_l_btn = "9"
-input_player1_r_btn = "10"
+input_player1_l_btn = "10"
+input_player1_r_btn = "9"
 input_player1_up_btn = "11"
 input_player1_down_btn = "12"
-input_player1_left_btn = "13"
-input_player1_right_btn = "14"
+input_player1_left_btn = "14"
+input_player1_right_btn = "13"
 
-# Phim L / R (btn 9 / 10): Giam / Tang am luong
-input_volume_up_btn = "10"
-input_volume_down_btn = "9"
+# Phim L / R vat ly: giam / tang am luong
+input_volume_up_btn = "9"
+input_volume_down_btn = "10"
 
 # Cau hinh OSD (On-Screen Display) ro net mau Cyan
 video_font_enable = "true"
@@ -391,12 +413,8 @@ input_joypad_driver = "sdl2"
     try:
         with open(ra_override_path, "w", encoding="utf-8") as f:
             f.write(ra_override_content)
-        ffmpeg_cfg_dir = os.path.join(SDCARD_PATH, "RetroArch", ".retroarch", "config", "FFmpeg")
-        if os.path.exists(ffmpeg_cfg_dir):
-            with open(os.path.join(ffmpeg_cfg_dir, "FFmpeg.cfg"), "w", encoding="utf-8") as f:
-                f.write(ra_override_content)
     except Exception as e:
-        log(f"Loi khi ghi override config: {e}")
+        log(f"Loi khi ghi override config tam: {e}")
 
     # 3. Xac dinh trinh phat RetroArch va FFMPEG Core
     ra_bin, ra_dir, ffmpeg_core = resolve_retroarch_and_ffmpeg()
@@ -407,11 +425,20 @@ input_joypad_driver = "sdl2"
     try:
         if ra_bin and ffmpeg_core and os.path.exists(ra_bin) and os.path.exists(ffmpeg_core):
             log(f"Khoi chay RetroArch: {ra_bin}, Core: {ffmpeg_core}")
-            # CPU boost
+            # Cac script cua emulator co the goi `setterm`, lenh khong ton tai tren
+            # mot so firmware. Day chi la CPU boost tuy chon, khong de stderr cua
+            # no lam nhieu log hoac anh huong den phien player.
             for sh_f in ("cpufreq.sh", "cpuswitch.sh"):
                 p = os.path.join(emu_dir, sh_f)
                 if os.path.exists(p):
-                    subprocess.call(["sh", p])
+                    result = subprocess.run(
+                        ["sh", p],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                    if result.returncode != 0:
+                        log(f"Bo qua CPU boost {sh_f} (exit code {result.returncode}).")
 
             env = os.environ.copy()
             env["HOME"] = ra_dir
@@ -431,12 +458,17 @@ input_joypad_driver = "sdl2"
                         "Audio-only: khong tim thay dieu khien den nen.")
                 except Exception as e:
                     log(f"Audio-only: loi tat man hinh: {e}")
-            subprocess.call("echo 1 > /tmp/stay_awake 2>/dev/null", shell=True)
-            res = subprocess.run(cmd, cwd=ra_dir, env=env)
-            subprocess.call("rm -f /tmp/stay_awake 2>/dev/null", shell=True)
+            try:
+                with open("/tmp/stay_awake", "w", encoding="ascii") as f:
+                    f.write("1\n")
+            except OSError as e:
+                log(f"Khong tao duoc co stay_awake: {e}")
+            log("RetroArch dang nam toan quyen SDL/video; cho den khi player thoat.")
+            res = subprocess.run(cmd, cwd=ra_dir, env=env, check=False)
             log(f"RetroArch exit code: {res.returncode}")
             success = (res.returncode == 0)
-
+            if not success:
+                record_error(f"RetroArch thoat bat thuong voi ma {res.returncode}")
 
         else:
             msg = "Hệ thống chưa cài RetroArch hoặc core FFMPEG!"
@@ -515,7 +547,12 @@ def run_session(session_path: str):
             ok = False
         elapsed = time.time() - t0
 
-        playback.add_watched(v, elapsed)
+        try:
+            from . import settings
+            if settings.load().get("save_history", True):
+                playback.add_watched(v, elapsed)
+        except Exception:
+            playback.add_watched(v, elapsed)
         if dur > 0:
             pos = min(elapsed, float(dur))
             if (dur - pos) < playback.RESUME_TAIL:
@@ -533,6 +570,9 @@ def run_session(session_path: str):
         if not ended:
             log("Nguoi dung thoat giua video hoac phat loi, ket thuc phien.")
             break
+        if not sess.autoplay:
+            log("Autoplay da tat, dung sau video hien tai.")
+            break
         if not sess.advance():
             log("Het hang doi.")
             break
@@ -545,7 +585,6 @@ def run_session(session_path: str):
 
 if __name__ == "__main__":
     import argparse
-    import json
 
     parser = argparse.ArgumentParser(description="RetroHub YouTube Player")
     parser.add_argument("video_id", nargs="?", default=None, help="YouTube Video ID or URL")

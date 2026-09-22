@@ -45,6 +45,8 @@ from zt.paths import (
     YT_FEED_FALLBACK_FILE,
     YT_FAVORITES_FILE,
     YT_FAVORITES_FALLBACK_FILE,
+    YT_DOWNLOAD_DIR,
+    YT_DOWNLOAD_INDEX_FILE,
 )
 
 INNERTUBE_URL = "https://www.youtube.com/youtubei/v1"
@@ -1042,10 +1044,11 @@ def resolve_audio_stream(video_id: str) -> tuple:
 
 
 def get_cached_video_path(video_id: str) -> str:
-    """Return local path if video is already downloaded and valid, else empty string."""
-    target = os.path.join(YT_VIDEO_CACHE_DIR, f"{video_id}.mp4")
-    if os.path.exists(target) and os.path.getsize(target) > 500 * 1024:
-        return target
+    """Return persistent downloaded media path, if present."""
+    for ext in ("mp4", "m4a", "webm"):
+        target = os.path.join(YT_DOWNLOAD_DIR, f"{video_id}.{ext}")
+        if os.path.exists(target) and os.path.getsize(target) > 64 * 1024:
+            return target
     return ""
 
 
@@ -1091,12 +1094,10 @@ def download_video_stream(video_id: str, progress_cb=None, cancel_fn=None) -> tu
     Returns:
         (file_path, title, err_msg)
     """
-    os.makedirs(YT_VIDEO_CACHE_DIR, exist_ok=True)
-    dest_path = os.path.join(YT_VIDEO_CACHE_DIR, f"{video_id}.mp4")
+    os.makedirs(YT_DOWNLOAD_DIR, exist_ok=True)
+    dest_path = os.path.join(YT_DOWNLOAD_DIR, f"{video_id}.mp4")
     if os.path.exists(dest_path) and os.path.getsize(dest_path) > 500 * 1024:
         return dest_path, "", None
-
-    cleanup_cache(max_mb=250)
 
     try:
         stream_url, title = extract_stream_url(video_id)
@@ -1141,9 +1142,11 @@ def download_video_stream(video_id: str, progress_cb=None, cancel_fn=None) -> tu
                     tot_mb = total_bytes / (1024 * 1024) if total_bytes > 0 else 0
                     progress_cb(pct, cur_mb, tot_mb, speed_mb)
 
-        if os.path.exists(dest_path):
-            os.remove(dest_path)
-        os.rename(part_path, dest_path)
+        os.replace(part_path, dest_path)
+        _upsert_download({"id": video_id, "title": title or video_id,
+                          "local_path": dest_path, "kind": "video",
+                          "downloaded_at": time.time(),
+                          "size": os.path.getsize(dest_path)})
         return dest_path, title, None
     except Exception as e:
         if os.path.exists(part_path):
@@ -1154,19 +1157,99 @@ def download_video_stream(video_id: str, progress_cb=None, cancel_fn=None) -> tu
         return None, title, f"Lỗi tải: {e}"
 
 
-def build_play_command(video_id: str, info_file: str = "/tmp/yt_stream_info.json") -> str:
-    """Build the shell command string to execute in handoff script /tmp/launch_game.sh.
+def load_downloads():
+    try:
+        with open(YT_DOWNLOAD_INDEX_FILE, "r", encoding="utf-8") as f:
+            items = json.load(f)
+        if isinstance(items, list):
+            return [x for x in items if isinstance(x, dict) and
+                    os.path.isfile(x.get("local_path", ""))]
+    except Exception:
+        pass
+    return []
 
-    Streams YouTube video immediately using rh.yt_player with RetroArch FFMPEG core.
-    If info_file exists, passes pre-extracted stream URL to bypass yt-dlp extraction entirely.
-    """
-    info_arg = f'--info-file "{info_file}"' if info_file else ""
+
+def _save_downloads(items):
+    os.makedirs(os.path.dirname(YT_DOWNLOAD_INDEX_FILE), exist_ok=True)
+    tmp = YT_DOWNLOAD_INDEX_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, YT_DOWNLOAD_INDEX_FILE)
+
+
+def _upsert_download(item):
+    items = [x for x in load_downloads() if x.get("id") != item.get("id") or
+             x.get("kind") != item.get("kind")]
+    items.insert(0, item)
+    _save_downloads(items)
+
+
+def delete_download(video_id, kind=None):
+    items = load_downloads()
+    kept = []
+    for item in items:
+        if item.get("id") == video_id and (kind is None or item.get("kind") == kind):
+            try:
+                os.remove(item.get("local_path", ""))
+            except OSError:
+                pass
+        else:
+            kept.append(item)
+    _save_downloads(kept)
+
+
+def download_audio_stream(video_id, progress_cb=None, cancel_fn=None):
+    """Download an audio-only stream without transcoding."""
+    os.makedirs(YT_DOWNLOAD_DIR, exist_ok=True)
+    try:
+        stream_url, title = resolve_audio_stream(video_id)
+    except Exception as exc:
+        return None, "", f"Lỗi lấy audio: {exc}"
+    if not stream_url:
+        return None, "", "Không có luồng audio tương thích"
+    dest = os.path.join(YT_DOWNLOAD_DIR, f"{video_id}.m4a")
+    part = dest + ".part"
+    try:
+        req = urllib.request.Request(stream_url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=20, context=_get_ssl_context()) as resp, open(part, "wb") as f:
+            total = int(resp.headers.get("Content-Length", "0") or 0)
+            done, started = 0, time.time()
+            while True:
+                if cancel_fn and cancel_fn():
+                    raise InterruptedError("Đã hủy tải")
+                chunk = resp.read(256 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk); done += len(chunk)
+                if progress_cb:
+                    elapsed = max(.01, time.time() - started)
+                    progress_cb(int(done * 100 / total) if total else 0,
+                                done / 1048576, total / 1048576,
+                                done / elapsed / 1048576)
+        os.replace(part, dest)
+        _upsert_download({"id": video_id, "title": title or video_id,
+                          "local_path": dest, "kind": "audio",
+                          "downloaded_at": time.time(), "size": os.path.getsize(dest)})
+        return dest, title, None
+    except Exception as exc:
+        try:
+            if os.path.exists(part):
+                os.remove(part)
+        except OSError:
+            pass
+        return None, title, str(exc)
+
+
+def build_play_command(video_id: str, title: str = "") -> str:
+    """Build the shell command string to execute in handoff script /tmp/launch_game.sh."""
+    safe_title = (title or "").replace('"', '\\"').replace('$', '\\$')
+    title_arg = f'--title "{safe_title}"' if safe_title else ""
     cmd = f"""#!/bin/sh
 SDCARD_PATH="${{SDCARD_PATH:-/mnt/SDCARD}}"
-APP_DIR="$SDCARD_PATH/Apps/RetroHub"
-LOG_FILE="$SDCARD_PATH/RetroHub-yt.log"
+APP_DIR="$SDCARD_PATH/Apps/ZimTube"
+LOG_FILE="$SDCARD_PATH/ZimTube-yt.log"
 
-echo "=== YouTube Streaming: {video_id} ($(date 2>/dev/null)) ===" > "$LOG_FILE"
+echo "=== ZimTube Streaming: {video_id} ($(date 2>/dev/null)) ===" > "$LOG_FILE"
 
 # Ensure System/lib is in LD_LIBRARY_PATH for OpenSSL 1.1.1 and SDL2
 export LD_LIBRARY_PATH="/mnt/SDCARD/System/lib:/usr/trimui/lib:$LD_LIBRARY_PATH"
@@ -1176,17 +1259,33 @@ if [ -f "$APP_DIR/python/bin/python3" ]; then
     PY3="$APP_DIR/python/bin/python3"
 elif [ -f "$SDCARD_PATH/System/bin/python3" ]; then
     PY3="$SDCARD_PATH/System/bin/python3"
-elif [ -f "$SDCARD_PATH/.retrohub/python/bin/python3" ]; then
-    PY3="$SDCARD_PATH/.retrohub/python/bin/python3"
+elif [ -f "$SDCARD_PATH/.zimtube/python/bin/python3" ]; then
+    PY3="$SDCARD_PATH/.zimtube/python/bin/python3"
+elif [ -f "$SDCARD_PATH/Apps/RetroHub/python/bin/python3" ]; then
+    PY3="$SDCARD_PATH/Apps/RetroHub/python/bin/python3"
 elif which python3 >/dev/null 2>&1; then
     PY3="python3"
 fi
 
 cd "$APP_DIR"
-"$PY3" -m rh.yt_player "{video_id}" {info_arg} >> "$LOG_FILE" 2>&1
+"$PY3" -m zt.yt_player "{video_id}" {title_arg} >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "Streaming Exit Code: $EXIT_CODE" >> "$LOG_FILE"
 """
     return cmd
 
+
+def launch_video_handoff(engine, video_id: str, title: str = ""):
+    """Write handoff script to /tmp/launch_game.sh and quit engine main loop."""
+    try:
+        script_content = build_play_command(video_id, title)
+        with open("/tmp/launch_game.sh", "w", encoding="utf-8") as f:
+            f.write(script_content)
+        os.chmod("/tmp/launch_game.sh", 0o755)
+        engine.quit()
+        return True
+    except Exception as e:
+        if hasattr(engine, "toast"):
+            engine.toast(f"Lỗi mở video: {e}")
+        return False

@@ -86,6 +86,10 @@ class ZimTubeEngine:
     def register_screen(self, name, screen):
         self._screens[name] = screen
 
+    def get_screen(self, name):
+        """Return a registered screen instance for context actions."""
+        return self._screens.get(name)
+
     def push_screen(self, name, params=None):
         screen = self._screens.get(name)
         if not screen:
@@ -252,6 +256,17 @@ class ZimTubeEngine:
             inputs.update(self._inputs.tick())
 
             screen = self.current_screen()
+            current_name = self._stack[-1] if self._stack else ""
+            if inputs.get("btn_menu"):
+                if current_name == "action_menu":
+                    dirty = screen.handle_input({"btn_menu": True})
+                    if dirty:
+                        self._dirty = True
+                    inputs.pop("btn_menu", None)
+                elif current_name in ("home", "watch"):
+                    self.push_screen("action_menu", {"source": current_name})
+                    inputs.pop("btn_menu", None)
+                    screen = self.current_screen()
             if screen and inputs:
                 dirty = screen.handle_input(inputs)
                 if dirty:

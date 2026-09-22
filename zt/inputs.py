@@ -9,12 +9,14 @@ REPEAT_RATE   = 0.12   # seconds between repeats
 _AXIS_DEAD = 8000
 
 _BTN_MAP = {
-    sdl2.SDL_CONTROLLER_BUTTON_A:             "btn_a",
-    sdl2.SDL_CONTROLLER_BUTTON_B:             "btn_b",
-    sdl2.SDL_CONTROLLER_BUTTON_X:             "btn_x",
-    sdl2.SDL_CONTROLLER_BUTTON_Y:             "btn_y",
+    # TrimUI physical labels are opposite SDL's generic ABXY naming.
+    sdl2.SDL_CONTROLLER_BUTTON_A:             "btn_b",
+    sdl2.SDL_CONTROLLER_BUTTON_B:             "btn_a",
+    sdl2.SDL_CONTROLLER_BUTTON_X:             "btn_y",
+    sdl2.SDL_CONTROLLER_BUTTON_Y:             "btn_x",
     sdl2.SDL_CONTROLLER_BUTTON_START:         "btn_start",
-    sdl2.SDL_CONTROLLER_BUTTON_BACK:          "btn_select",
+    sdl2.SDL_CONTROLLER_BUTTON_BACK:          "btn_menu",
+    sdl2.SDL_CONTROLLER_BUTTON_GUIDE:         "btn_menu",
     sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  "btn_l",
     sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: "btn_r",
     sdl2.SDL_CONTROLLER_BUTTON_DPAD_UP:       "btn_up",
@@ -32,6 +34,8 @@ _KEY_MAP = {
     sdl2.SDLK_ESCAPE: "btn_b",
     sdl2.SDLK_z:      "btn_a",
     sdl2.SDLK_x:      "btn_b",
+    sdl2.SDLK_F1:     "btn_menu",
+    sdl2.SDLK_m:      "btn_menu",
 }
 
 

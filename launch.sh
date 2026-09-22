@@ -108,9 +108,21 @@ while true; do
     "$PY" app.py 2>>"$ERRLOG"
     APP_EXIT_CODE=$?
     if [ -f /tmp/launch_game.sh ]; then
+        # app.py da huy renderer/window va SDL_Quit truoc khi toi day, nen
+        # RetroArch la tien trinh duy nhat nam video/input cua may.
         sh /tmp/launch_game.sh
-        rm -f /tmp/launch_game.sh
+        PLAYER_EXIT_CODE=$?
+        rm -f /tmp/launch_game.sh /tmp/stay_awake 2>/dev/null
+        echo "[ZimTube] Player handoff exit code: $PLAYER_EXIT_CODE" >> "$ERRLOG"
         touch /tmp/stay_alive 2>/dev/null
+    elif [ -f "$CACHE_DIR/update/pending.json" ]; then
+        log "Dang cai dat ban cap nhat ZimTube..."
+        "$PY" -m zt.apply_update "$APP" \
+            "$CACHE_DIR/update/pending.json" \
+            "$CACHE_DIR/update/result.txt" >>"$ERRLOG" 2>&1
+        touch /tmp/stay_alive 2>/dev/null
+        # Luon mo lai app: thanh cong hoac rollback deu hien ket qua cho nguoi dung.
+        continue
     else
         break
     fi
