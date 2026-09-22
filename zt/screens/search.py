@@ -209,7 +209,7 @@ class SearchScreen(BaseScreen):
         chan  = yt.clean_yt_text(video.get("channel", ""))
         views = video.get("views", "")
         age   = video.get("age", "")
-        meta  = " · ".join(filter(None, [chan, views, age]))
+        meta  = " · ".join(str(x) for x in [chan, views, age] if x)
         engine.draw_text(meta, engine.font_small, info_x, y + 56, 110, 110, 110,
                          max_w=info_w)
 

@@ -200,9 +200,10 @@ class WatchScreen(BaseScreen):
         # ── Meta ─────────────────────────────────────────────────────────
         views = self.video.get("views", "")
         age   = self.video.get("age", "")
-        meta  = " · ".join(filter(None, [views, age]))
+        meta  = " · ".join(str(x) for x in [views, age] if x)
         my = ty + 52
         engine.draw_text(meta, engine.font_small, 10, my, 110, 110, 110)
+
 
         # ── Buttons ──────────────────────────────────────────────────────
         by = my + 32
@@ -261,7 +262,7 @@ class WatchScreen(BaseScreen):
                 engine.draw_text(rt, engine.font_small,
                                  rx + tw + 8, ry + 4, 200, 200, 200,
                                  max_w=rw - tw - 12)
-                rmeta = " · ".join(filter(None, [rv.get("views", ""), rv.get("age", "")]))
+                rmeta = " · ".join(str(x) for x in [rv.get("views", ""), rv.get("age", "")] if x)
                 engine.draw_text(rmeta, engine.font_small,
                                  rx + tw + 8, ry + 26, 100, 100, 100,
                                  max_w=rw - tw - 12)

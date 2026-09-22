@@ -361,7 +361,8 @@ class HomeScreen(BaseScreen):
         # Views + age
         views = video.get("views", "")
         age   = video.get("age", "")
-        meta  = " · ".join(filter(None, [views, age]))
+        meta  = " · ".join(str(x) for x in [views, age] if x)
         if meta:
             engine.draw_text(meta, engine.font_small,
                              x + 6, ty + 20, 110, 110, 110, max_w=CARD_W - 12)
+
