@@ -54,6 +54,10 @@ class HomeScreen(BaseScreen):
     def _build_tabs(self):
         from zt import playback
         tabs = ["🔥 Trending"]
+        if playback.continue_watching(limit=1):
+            tabs.append("▶ Xem tiếp")
+        if playback.load_watched() or yt.load_search_history():
+            tabs.append("✨ Dành cho bạn")
         if playback.load_watched():
             tabs.append("◷ Lịch sử")
         favs = yt.load_favorites()
@@ -92,10 +96,26 @@ class HomeScreen(BaseScreen):
         q = self._current_query()
         threading.Thread(target=self._bg_load, args=(q, gen), daemon=True).start()
 
+    def _recommendation_query(self):
+        """Use the newest search first, then the latest watched title as a fallback."""
+        history = yt.load_search_history() or []
+        if history:
+            return history[0]
+        from zt import playback
+        watched = playback.load_watched()
+        if watched:
+            return watched[0].get("title", "")
+        return "Trending"
+
     def _bg_load(self, query, gen):
         try:
             if "Trending" in query or "🔥" in query:
                 videos = yt.get_trending(limit=18)
+            elif "Xem tiếp" in query:
+                from zt import playback
+                videos = playback.continue_watching(limit=18)
+            elif "Dành cho bạn" in query:
+                videos = yt.search_youtube(self._recommendation_query(), limit=18)
             elif "Lịch sử" in query:
                 from zt import playback
                 videos = playback.load_watched()

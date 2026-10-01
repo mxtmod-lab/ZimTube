@@ -364,9 +364,10 @@ input_exit_emulator = "escape"
 input_menu_toggle_btn = "3"
 input_menu_toggle_gamepad_combo = "4"
 
-# Phim Y (btn 2): Tua nhanh (Fast forward)
+# Phim Y (btn 2): Tua nhanh 1.5x de stream kip tai
 input_toggle_fast_forward_btn = "2"
 input_hold_fast_forward_btn = "nul"
+fastforward_ratio = "1.5"
 
 # Phim Start (btn 6): Tam dung / Tiep tuc
 input_player1_start_btn = "6"

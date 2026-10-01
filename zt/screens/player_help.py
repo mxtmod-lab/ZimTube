@@ -8,7 +8,7 @@ from zt.state import SCREEN_W
 CONTROLS = (
     ("A", "Tạm dừng / tiếp tục"),
     ("B", "Thoát video, về ZimTube"),
-    ("Y", "Bật / tắt tốc độ ×2"),
+    ("Y", "Bật / tắt tốc độ ×1.5"),
     ("← / →", "Tua lùi / tới 10 giây"),
     ("↓ / ↑", "Tua lùi / tới 60 giây"),
     ("L1 / R1", "Giảm / tăng âm lượng"),
