@@ -67,6 +67,8 @@ class HomeScreen(BaseScreen):
             tabs.append("Nhạc Việt")
         if "Game" not in tabs:
             tabs.append("Game")
+        if "⚔️ Hoạt hình tu tiên" not in tabs:
+            tabs.append("⚔️ Hoạt hình tu tiên")
         self.tabs = tabs
         if self.tab_idx >= len(self.tabs):
             self.tab_idx = 0
